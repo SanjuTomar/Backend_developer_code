@@ -1,69 +1,91 @@
-// server.js
+
 const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-require('dotenv').config();
-
-const User = require('./model/User');
+const EventEmitter = require('events');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
 app.use(cors());
 app.use(bodyParser.json());
 
-// MongoDB connection
-mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('MongoDB connected'))
-    .catch(err => console.log(err));
+mongoose.connect('mongodb://localhost:27017/userdb', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+});
 
-// CRUD Routes
+const userSchema = new mongoose.Schema({
+    user: { type: String, required: true },
+    interest: { type: [String], required: true },
+    age: { type: Number, required: true },
+    mobile: { type: Number, required: true },
+    email: { type: String, required: true },
+});
 
-// Create User
+const User = mongoose.model('User ', userSchema);
+
+const eventEmitter = new EventEmitter();
+
+eventEmitter.on('userCreated', (user) => {
+    console.log('User  created:', user);
+});
+
+eventEmitter.on('userUpdated', (user) => {
+    console.log('User  updated:', user);
+});
+
+eventEmitter.on('userDeleted', (user) => {
+    console.log('User  deleted:', user);
+});
+
 app.post('/api/users', async (req, res) => {
-    const { user, interest, age, mobile, email } = req.body;
+    const user = new User(req.body);
     try {
-        const newUser  = new User({ user, interest, age, mobile, email });
-        await newUser .save();
-        res.status(201).json(newUser );
+        await user.save();
+        res.status(201).send(user);
+        eventEmitter.emit('userCreated', user); 
     } catch (error) {
-        res.status(400).json({ message: error.message });
+        res.status(400).send(error);
     }
 });
 
-// Read Users
 app.get('/api/users', async (req, res) => {
     try {
         const users = await User.find();
-        res.json(users);
+        res.status(200).send(users);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(500).send(error);
     }
 });
 
-// Update User
 app.put('/api/users/:id', async (req, res) => {
     try {
         const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
-        res.json(user);
+        if (!user) {
+            return res.status(404).send();
+        }
+        res.send(user);
+        eventEmitter.emit('userUpdated', user); 
     } catch (error) {
-        res.status(400).json({ message: error.message });
+        res.status(400).send(error);
     }
 });
 
-// Delete User
 app.delete('/api/users/:id', async (req, res) => {
     try {
-        await User.findByIdAndDelete(req.params.id);
-        res.json({ message: 'User  deleted' });
+        const user = await User.findByIdAndDelete(req.params.id);
+        if (!user) {
+            return res.status(404).send();
+        }
+        res.send(user);
+        eventEmitter.emit('userDeleted', user); 
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(500).send(error);
     }
 });
 
-// Start server
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server is running on http://localhost:${PORT}`);
 });
